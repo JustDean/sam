@@ -53,9 +53,9 @@ func (a *AuthManager) Run(ctx context.Context) {
 func (a *AuthManager) GetUserBySessionId(ctx context.Context, sessionid string) (User, error) {
 	// TODO impliment cache
 	var u User
-	query := `SELECT u.id, u.username, u.password 
+	query := `SELECT u.username, u.password 
 		FROM users u JOIN sessions s 
-		ON u.id = s.user_id 
+		ON u.username = s.username 
 		WHERE s.id = $1 AND s.valid_through > $2`
 	now, err := utils.GetNowTz()
 	if err != nil {
@@ -63,7 +63,7 @@ func (a *AuthManager) GetUserBySessionId(ctx context.Context, sessionid string) 
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err = a.dbpool.QueryRow(queryCtx, query, sessionid, now).Scan(&u.Id, &u.Username, &u.password)
+	err = a.dbpool.QueryRow(queryCtx, query, sessionid, now).Scan(&u.Username, &u.password)
 	if err != nil {
 		return User{}, err
 	}
@@ -79,10 +79,10 @@ func (a *AuthManager) encryptPassword(password string) string {
 
 func (a *AuthManager) CreateUser(ctx context.Context, username, password string) (User, error) {
 	u := User{Username: username, password: a.encryptPassword(password)}
-	query := "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id"
+	query := "INSERT INTO users (username, password) VALUES ($1, $2)"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err := a.dbpool.QueryRow(queryCtx, query, u.Username, u.password).Scan(&u.Id)
+	_, err := a.dbpool.Exec(queryCtx, query, u.Username, u.password)
 	if err != nil {
 		return u, err
 	}
@@ -108,23 +108,10 @@ func (a *AuthManager) LoginUser(ctx context.Context, username, password string) 
 func (a *AuthManager) getUserByUsername(ctx context.Context, username string) (User, error) {
 	// TODO cache
 	u := User{Username: username}
-	query := "SELECT id, password FROM users WHERE username = $1"
+	query := "SELECT password FROM users WHERE username = $1"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err := a.dbpool.QueryRow(queryCtx, query, username).Scan(&u.Id, &u.password)
-	if err != nil {
-		return u, err
-	}
-	return u, nil
-}
-
-func (a *AuthManager) getUserById(ctx context.Context, id string) (User, error) {
-	// TODO cache
-	u := User{Id: id}
-	query := "SELECT username, password FROM users WHERE id = $1"
-	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
-	defer cancel()
-	err := a.dbpool.QueryRow(queryCtx, query, id).Scan(&u.Username, &u.password)
+	err := a.dbpool.QueryRow(queryCtx, query, username).Scan(&u.password)
 	if err != nil {
 		return u, err
 	}
@@ -137,11 +124,11 @@ func (a *AuthManager) createSesssion(ctx context.Context, u User) (Session, erro
 		return Session{}, err
 	}
 	expirationDate := now.AddDate(0, 0, 10)
-	newSession := Session{ValidThrough: expirationDate, UserId: u.Id}
-	query := "INSERT INTO sessions (valid_through, user_id) VALUES ($1, $2) RETURNING id"
+	newSession := Session{ValidThrough: expirationDate, Username: u.Username}
+	query := "INSERT INTO sessions (valid_through, username) VALUES ($1, $2) RETURNING id"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err = a.dbpool.QueryRow(queryCtx, query, newSession.ValidThrough, newSession.UserId).Scan(&newSession.Id)
+	err = a.dbpool.QueryRow(queryCtx, query, newSession.ValidThrough, newSession.Username).Scan(&newSession.Id)
 	if err != nil {
 		return Session{}, err
 	}
@@ -157,26 +144,26 @@ func (a *AuthManager) invalidateUserSessions(ctx context.Context, u User) error 
 	if err != nil {
 		return err
 	}
-	query := "UPDATE sessions SET valid_through = $1 WHERE user_id = $2"
+	query := "UPDATE sessions SET valid_through = $1 WHERE username = $2"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	_, err = a.dbpool.Exec(queryCtx, query, now, u.Id)
+	_, err = a.dbpool.Exec(queryCtx, query, now, u.Username)
 	return err
 }
 
-func (a *AuthManager) ChangePassword(ctx context.Context, userId, currentPassword, newPassword string) (User, error) {
-	user, err := a.getUserById(ctx, userId)
+func (a *AuthManager) ChangePassword(ctx context.Context, username, currentPassword, newPassword string) (User, error) {
+	user, err := a.getUserByUsername(ctx, username)
 	if err != nil {
 		return user, err
 	}
 	if !a.comparePasswords(user, currentPassword) {
 		return User{}, errInvalidCredentials
 	}
-	query := "UPDATE users SET password = $1 WHERE id = $2"
+	query := "UPDATE users SET password = $1 WHERE username = $2"
 	encryptedPassword := a.encryptPassword(newPassword)
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	_, err = a.dbpool.Exec(queryCtx, query, encryptedPassword, userId)
+	_, err = a.dbpool.Exec(queryCtx, query, encryptedPassword, username)
 	if err != nil {
 		return user, err
 	}

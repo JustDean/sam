@@ -13,18 +13,17 @@ service Sam {
 message Blank {}
 
 message SessionId {
-    string session_id = 1;
+    string id = 1;
 }
 
 message User {
-    string user_id = 1;
     string username = 2;
 }
 
 message Session {
-    string session_id = 1;
+    string id = 1;
     string valid_through = 2;
-    string user_id = 3;
+    string username = 3;
 }
 
 message SignupRequest {
@@ -38,7 +37,7 @@ message LoginRequest {
 }
 
 message ChangePasswordRequest {
-    string user_id = 1;
+    string username = 1;
     string current_password = 2;
     string new_password = 3;
 }

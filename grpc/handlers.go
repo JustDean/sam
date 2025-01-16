@@ -12,7 +12,7 @@ func (s *Server) Signup(ctx context.Context, data *SignupRequest) (*User, error)
 		return nil, err
 	}
 	log.Printf("Success Signup - %v", user)
-	return &User{UserId: user.Id, Username: user.Username}, nil
+	return &User{Username: user.Username}, nil
 }
 
 func (s *Server) Login(ctx context.Context, data *LoginRequest) (*Session, error) {
@@ -21,12 +21,12 @@ func (s *Server) Login(ctx context.Context, data *LoginRequest) (*Session, error
 		log.Printf("Error Login - %v: %v", data, err)
 		return nil, err
 	}
-	log.Printf("Success Login - for user %s", session.UserId)
-	return &Session{SessionId: session.Id, ValidThrough: session.ValidThrough.String(), UserId: session.UserId}, nil
+	log.Printf("Success Login - for user %s", session.Username)
+	return &Session{Id: session.Id, ValidThrough: session.ValidThrough.String(), Username: session.Username}, nil
 }
 
 func (s *Server) Logout(ctx context.Context, data *SessionId) (*Blank, error) {
-	err := s.am.InvalidateSession(ctx, data.SessionId)
+	err := s.am.InvalidateSession(ctx, data.Id)
 	if err != nil {
 		log.Printf("Error Logout - %v: %v", data, err)
 	} else {
@@ -36,21 +36,21 @@ func (s *Server) Logout(ctx context.Context, data *SessionId) (*Blank, error) {
 }
 
 func (s *Server) Authenticate(ctx context.Context, data *SessionId) (*User, error) {
-	user, err := s.am.GetUserBySessionId(ctx, data.SessionId)
+	user, err := s.am.GetUserBySessionId(ctx, data.Id)
 	if err != nil {
 		log.Printf("Error Authenticate - %v: %v", data, err)
 		return &User{}, err
 	}
 	log.Printf("Success Authenticate - %v", user)
-	return &User{UserId: user.Id, Username: user.Username}, nil
+	return &User{Username: user.Username}, nil
 }
 
 func (s *Server) ChangePassword(ctx context.Context, data *ChangePasswordRequest) (*Blank, error) {
-	user, err := s.am.ChangePassword(ctx, data.UserId, data.CurrentPassword, data.NewPassword)
+	user, err := s.am.ChangePassword(ctx, data.Username, data.CurrentPassword, data.NewPassword)
 	if err != nil {
-		log.Printf("Error ChangePassword - %s", data.UserId)
+		log.Printf("Error ChangePassword - %s", data.Username)
 	} else {
-		log.Printf("Success ChangePassword - for user %s", user.Id)
+		log.Printf("Success ChangePassword - for user %s", user.Username)
 	}
 	return &Blank{}, err
 }
