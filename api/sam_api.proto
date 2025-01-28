@@ -3,12 +3,24 @@ syntax = "proto3";
 option go_package = "github.com/JustDean/sam/grpc";
 
 service Sam {
-    rpc Signup (SignupRequest) returns (User) {}
-    rpc Login (LoginRequest) returns (Session) {}
+    rpc Signup (CredentialsRequest) returns (User) {}
+    rpc Login (CredentialsRequest) returns (Session) {}
+    rpc SignupAndLogin(CredentialsRequest) returns (Session) {}
     rpc Logout (SessionId) returns (Blank) {}
     rpc Authenticate (SessionId) returns (User) {}
     rpc ChangePassword (ChangePasswordRequest) returns (Blank) {}
 };
+
+message CredentialsRequest {
+    string username = 1;
+    string password = 2;
+}
+
+message ChangePasswordRequest {
+    string username = 1;
+    string current_password = 2;
+    string new_password = 3;
+}
 
 message Blank {}
 
@@ -24,20 +36,4 @@ message Session {
     string id = 1;
     string valid_through = 2;
     string username = 3;
-}
-
-message SignupRequest {
-    string username = 1;
-    string password = 2;
-}
-
-message LoginRequest {
-    string username = 1;
-    string password = 2; 
-}
-
-message ChangePasswordRequest {
-    string username = 1;
-    string current_password = 2;
-    string new_password = 3;
 }

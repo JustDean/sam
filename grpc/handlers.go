@@ -1,11 +1,11 @@
 package grpc
 
 import (
-	context "context"
+	"context"
 	"log"
 )
 
-func (s *Server) Signup(ctx context.Context, data *SignupRequest) (*User, error) {
+func (s *Server) Signup(ctx context.Context, data *CredentialsRequest) (*User, error) {
 	user, err := s.am.CreateUser(ctx, data.Username, data.Password)
 	if err != nil {
 		log.Printf("Error Signup - %v: %v", data, err)
@@ -15,7 +15,7 @@ func (s *Server) Signup(ctx context.Context, data *SignupRequest) (*User, error)
 	return &User{Username: user.Username}, nil
 }
 
-func (s *Server) Login(ctx context.Context, data *LoginRequest) (*Session, error) {
+func (s *Server) Login(ctx context.Context, data *CredentialsRequest) (*Session, error) {
 	session, err := s.am.LoginUser(ctx, data.Username, data.Password)
 	if err != nil {
 		log.Printf("Error Login - %v: %v", data, err)
@@ -23,6 +23,11 @@ func (s *Server) Login(ctx context.Context, data *LoginRequest) (*Session, error
 	}
 	log.Printf("Success Login - for user %s", session.Username)
 	return &Session{Id: session.Id, ValidThrough: session.ValidThrough.String(), Username: session.Username}, nil
+}
+
+func (s *Server) SignupAndLogin(ctx context.Context, data *CredentialsRequest) (*Session, error) {
+	s.Signup(ctx, data)
+	return s.Login(ctx, data)
 }
 
 func (s *Server) Logout(ctx context.Context, data *SessionId) (*Blank, error) {

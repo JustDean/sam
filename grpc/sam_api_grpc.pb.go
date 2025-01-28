@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Sam_Signup_FullMethodName         = "/Sam/Signup"
 	Sam_Login_FullMethodName          = "/Sam/Login"
+	Sam_SignupAndLogin_FullMethodName = "/Sam/SignupAndLogin"
 	Sam_Logout_FullMethodName         = "/Sam/Logout"
 	Sam_Authenticate_FullMethodName   = "/Sam/Authenticate"
 	Sam_ChangePassword_FullMethodName = "/Sam/ChangePassword"
@@ -30,8 +31,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SamClient interface {
-	Signup(ctx context.Context, in *SignupRequest, opts ...grpc.CallOption) (*User, error)
-	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*Session, error)
+	Signup(ctx context.Context, in *CredentialsRequest, opts ...grpc.CallOption) (*User, error)
+	Login(ctx context.Context, in *CredentialsRequest, opts ...grpc.CallOption) (*Session, error)
+	SignupAndLogin(ctx context.Context, in *CredentialsRequest, opts ...grpc.CallOption) (*Session, error)
 	Logout(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*Blank, error)
 	Authenticate(ctx context.Context, in *SessionId, opts ...grpc.CallOption) (*User, error)
 	ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*Blank, error)
@@ -45,7 +47,7 @@ func NewSamClient(cc grpc.ClientConnInterface) SamClient {
 	return &samClient{cc}
 }
 
-func (c *samClient) Signup(ctx context.Context, in *SignupRequest, opts ...grpc.CallOption) (*User, error) {
+func (c *samClient) Signup(ctx context.Context, in *CredentialsRequest, opts ...grpc.CallOption) (*User, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(User)
 	err := c.cc.Invoke(ctx, Sam_Signup_FullMethodName, in, out, cOpts...)
@@ -55,10 +57,20 @@ func (c *samClient) Signup(ctx context.Context, in *SignupRequest, opts ...grpc.
 	return out, nil
 }
 
-func (c *samClient) Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*Session, error) {
+func (c *samClient) Login(ctx context.Context, in *CredentialsRequest, opts ...grpc.CallOption) (*Session, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Session)
 	err := c.cc.Invoke(ctx, Sam_Login_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *samClient) SignupAndLogin(ctx context.Context, in *CredentialsRequest, opts ...grpc.CallOption) (*Session, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Session)
+	err := c.cc.Invoke(ctx, Sam_SignupAndLogin_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,8 +111,9 @@ func (c *samClient) ChangePassword(ctx context.Context, in *ChangePasswordReques
 // All implementations must embed UnimplementedSamServer
 // for forward compatibility.
 type SamServer interface {
-	Signup(context.Context, *SignupRequest) (*User, error)
-	Login(context.Context, *LoginRequest) (*Session, error)
+	Signup(context.Context, *CredentialsRequest) (*User, error)
+	Login(context.Context, *CredentialsRequest) (*Session, error)
+	SignupAndLogin(context.Context, *CredentialsRequest) (*Session, error)
 	Logout(context.Context, *SessionId) (*Blank, error)
 	Authenticate(context.Context, *SessionId) (*User, error)
 	ChangePassword(context.Context, *ChangePasswordRequest) (*Blank, error)
@@ -114,11 +127,14 @@ type SamServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSamServer struct{}
 
-func (UnimplementedSamServer) Signup(context.Context, *SignupRequest) (*User, error) {
+func (UnimplementedSamServer) Signup(context.Context, *CredentialsRequest) (*User, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Signup not implemented")
 }
-func (UnimplementedSamServer) Login(context.Context, *LoginRequest) (*Session, error) {
+func (UnimplementedSamServer) Login(context.Context, *CredentialsRequest) (*Session, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Login not implemented")
+}
+func (UnimplementedSamServer) SignupAndLogin(context.Context, *CredentialsRequest) (*Session, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignupAndLogin not implemented")
 }
 func (UnimplementedSamServer) Logout(context.Context, *SessionId) (*Blank, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Logout not implemented")
@@ -151,7 +167,7 @@ func RegisterSamServer(s grpc.ServiceRegistrar, srv SamServer) {
 }
 
 func _Sam_Signup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SignupRequest)
+	in := new(CredentialsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -163,13 +179,13 @@ func _Sam_Signup_Handler(srv interface{}, ctx context.Context, dec func(interfac
 		FullMethod: Sam_Signup_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SamServer).Signup(ctx, req.(*SignupRequest))
+		return srv.(SamServer).Signup(ctx, req.(*CredentialsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Sam_Login_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LoginRequest)
+	in := new(CredentialsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -181,7 +197,25 @@ func _Sam_Login_Handler(srv interface{}, ctx context.Context, dec func(interface
 		FullMethod: Sam_Login_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SamServer).Login(ctx, req.(*LoginRequest))
+		return srv.(SamServer).Login(ctx, req.(*CredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Sam_SignupAndLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SamServer).SignupAndLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Sam_SignupAndLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SamServer).SignupAndLogin(ctx, req.(*CredentialsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -254,6 +288,10 @@ var Sam_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Login",
 			Handler:    _Sam_Login_Handler,
+		},
+		{
+			MethodName: "SignupAndLogin",
+			Handler:    _Sam_SignupAndLogin_Handler,
 		},
 		{
 			MethodName: "Logout",

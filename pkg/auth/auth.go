@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -49,11 +51,52 @@ func (a *AuthManager) Run(ctx context.Context) {
 	log.Println("Auth Manager is stopped")
 }
 
+func (a *AuthManager) composeSessionKey(sessionid string) string {
+	return fmt.Sprintf("sessionid_%s", sessionid)
+}
+
+func (a *AuthManager) composeUserKey(username string) string {
+	return fmt.Sprintf("user_%s", username)
+}
+
+func (a *AuthManager) cacheGet(ctx context.Context, key string) (User, error) {
+	var user User
+	res, err := a.cache.Get(ctx, key).Result()
+	if err != nil {
+		return user, err
+	}
+	json.Unmarshal([]byte(res), &user)
+	return user, err
+}
+
+func (a *AuthManager) cacheSetSession(ctx context.Context, session Session, user User) error {
+	key := a.composeSessionKey(session.Id)
+	now, _ := utils.GetNowTz()
+	ttl := session.ValidThrough.Sub(now)
+	data, err := json.Marshal(user)
+	if err != nil {
+		return err
+	}
+	return a.cache.Set(ctx, key, data, ttl).Err()
+}
+
+func (a *AuthManager) cacheSetUser(ctx context.Context, user User) error {
+	key := a.composeUserKey(user.Username)
+	data, err := json.Marshal(user)
+	if err != nil {
+		return err
+	}
+	return a.cache.Set(ctx, key, data, 0).Err()
+}
+
 // GetUserBySessionId
 func (a *AuthManager) GetUserBySessionId(ctx context.Context, sessionid string) (User, error) {
-	// TODO impliment cache
 	var u User
-	query := `SELECT u.username, u.password 
+	u, err := a.cacheGet(ctx, a.composeSessionKey(sessionid))
+	if err == nil {
+		return u, nil
+	}
+	query := `SELECT u.username, u.password, s.valid_through
 		FROM users u JOIN sessions s 
 		ON u.username = s.username 
 		WHERE s.id = $1 AND s.valid_through > $2`
@@ -61,12 +104,19 @@ func (a *AuthManager) GetUserBySessionId(ctx context.Context, sessionid string) 
 	if err != nil {
 		return User{}, err
 	}
+	s := Session{
+		Id:           sessionid,
+		ValidThrough: now,
+		Username:     "",
+	}
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err = a.dbpool.QueryRow(queryCtx, query, sessionid, now).Scan(&u.Username, &u.password)
+	err = a.dbpool.QueryRow(queryCtx, query, sessionid, now).Scan(&u.Username, &u.Password, &s.ValidThrough)
 	if err != nil {
 		return User{}, err
 	}
+	s.Username = u.Username
+	a.cacheSetSession(ctx, s, u)
 	return u, nil
 }
 
@@ -78,14 +128,15 @@ func (a *AuthManager) encryptPassword(password string) string {
 }
 
 func (a *AuthManager) CreateUser(ctx context.Context, username, password string) (User, error) {
-	u := User{Username: username, password: a.encryptPassword(password)}
+	u := User{Username: username, Password: a.encryptPassword(password)}
 	query := "INSERT INTO users (username, password) VALUES ($1, $2)"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	_, err := a.dbpool.Exec(queryCtx, query, u.Username, u.password)
+	_, err := a.dbpool.Exec(queryCtx, query, u.Username, u.Password)
 	if err != nil {
 		return u, err
 	}
+	a.cacheSetUser(ctx, u)
 	return u, nil
 }
 
@@ -102,19 +153,22 @@ func (a *AuthManager) LoginUser(ctx context.Context, username, password string) 
 		return Session{}, err
 	}
 	return s, nil
-
 }
 
 func (a *AuthManager) getUserByUsername(ctx context.Context, username string) (User, error) {
-	// TODO cache
-	u := User{Username: username}
+	u, err := a.cacheGet(ctx, a.composeUserKey(username))
+	if err == nil {
+		return u, nil
+	}
+	u = User{Username: username}
 	query := "SELECT password FROM users WHERE username = $1"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err := a.dbpool.QueryRow(queryCtx, query, username).Scan(&u.password)
+	err = a.dbpool.QueryRow(queryCtx, query, username).Scan(&u.Password)
 	if err != nil {
 		return u, err
 	}
+	a.cacheSetUser(ctx, u)
 	return u, nil
 }
 
@@ -132,11 +186,12 @@ func (a *AuthManager) createSesssion(ctx context.Context, u User) (Session, erro
 	if err != nil {
 		return Session{}, err
 	}
+	a.cacheSetSession(ctx, newSession, u)
 	return newSession, nil
 }
 
 func (a *AuthManager) comparePasswords(u User, password string) bool {
-	return u.password == a.encryptPassword(password)
+	return u.Password == a.encryptPassword(password)
 }
 
 func (a *AuthManager) invalidateUserSessions(ctx context.Context, u User) error {
@@ -144,10 +199,26 @@ func (a *AuthManager) invalidateUserSessions(ctx context.Context, u User) error 
 	if err != nil {
 		return err
 	}
-	query := "UPDATE sessions SET valid_through = $1 WHERE username = $2"
+	query := "UPDATE sessions SET valid_through = $1 WHERE username = $2 RETURNING id"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	_, err = a.dbpool.Exec(queryCtx, query, now, u.Username)
+	rows, err := a.dbpool.Query(queryCtx, query, now, u.Username)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var sessionIds []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
+		sessionIds = append(sessionIds, a.composeSessionKey(id))
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = a.cache.Del(ctx, sessionIds...).Result()
 	return err
 }
 
@@ -167,7 +238,7 @@ func (a *AuthManager) ChangePassword(ctx context.Context, username, currentPassw
 	if err != nil {
 		return user, err
 	}
-	user.password = encryptedPassword
+	user.Password = encryptedPassword
 	a.invalidateUserSessions(ctx, user)
 	return user, nil
 }
@@ -181,5 +252,9 @@ func (a *AuthManager) InvalidateSession(ctx context.Context, sessionId string) e
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
 	_, err = a.dbpool.Exec(queryCtx, query, now, sessionId)
+	if err != nil {
+		return err
+	}
+	_, err = a.cache.Del(ctx, a.composeSessionKey(sessionId)).Result()
 	return err
 }
