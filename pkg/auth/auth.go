@@ -71,8 +71,7 @@ func (a *AuthManager) cacheGet(ctx context.Context, key string) (User, error) {
 
 func (a *AuthManager) cacheSetSession(ctx context.Context, session Session, user User) error {
 	key := a.composeSessionKey(session.Id)
-	now, _ := utils.GetNowTz()
-	ttl := session.ValidThrough.Sub(now)
+	ttl := session.ValidThrough.Sub(utils.GetNowTz())
 	data, err := json.Marshal(user)
 	if err != nil {
 		return err
@@ -100,10 +99,7 @@ func (a *AuthManager) GetUserBySessionId(ctx context.Context, sessionid string) 
 		FROM users u JOIN sessions s 
 		ON u.username = s.username 
 		WHERE s.id = $1 AND s.valid_through > $2`
-	now, err := utils.GetNowTz()
-	if err != nil {
-		return User{}, err
-	}
+	now := utils.GetNowTz()
 	s := Session{
 		Id:           sessionid,
 		ValidThrough: now,
@@ -173,16 +169,12 @@ func (a *AuthManager) getUserByUsername(ctx context.Context, username string) (U
 }
 
 func (a *AuthManager) createSesssion(ctx context.Context, u User) (Session, error) {
-	now, err := utils.GetNowTz()
-	if err != nil {
-		return Session{}, err
-	}
-	expirationDate := now.AddDate(0, 0, 10)
+	expirationDate := utils.GetNowTz().AddDate(0, 0, 10)
 	newSession := Session{ValidThrough: expirationDate, Username: u.Username}
 	query := "INSERT INTO sessions (valid_through, username) VALUES ($1, $2) RETURNING id"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	err = a.dbpool.QueryRow(queryCtx, query, newSession.ValidThrough, newSession.Username).Scan(&newSession.Id)
+	err := a.dbpool.QueryRow(queryCtx, query, newSession.ValidThrough, newSession.Username).Scan(&newSession.Id)
 	if err != nil {
 		return Session{}, err
 	}
@@ -195,14 +187,10 @@ func (a *AuthManager) comparePasswords(u User, password string) bool {
 }
 
 func (a *AuthManager) invalidateUserSessions(ctx context.Context, u User) error {
-	now, err := utils.GetNowTz()
-	if err != nil {
-		return err
-	}
 	query := "UPDATE sessions SET valid_through = $1 WHERE username = $2 RETURNING id"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	rows, err := a.dbpool.Query(queryCtx, query, now, u.Username)
+	rows, err := a.dbpool.Query(queryCtx, query, utils.GetNowTz(), u.Username)
 	if err != nil {
 		return err
 	}
@@ -240,18 +228,18 @@ func (a *AuthManager) ChangePassword(ctx context.Context, username, currentPassw
 	}
 	user.Password = encryptedPassword
 	a.invalidateUserSessions(ctx, user)
+	_, err = a.cache.Del(ctx, a.composeUserKey(username)).Result()
+	if err != nil {
+		return user, err
+	}
 	return user, nil
 }
 
 func (a *AuthManager) InvalidateSession(ctx context.Context, sessionId string) error {
-	now, err := utils.GetNowTz()
-	if err != nil {
-		return err
-	}
 	query := "UPDATE sessions SET valid_through = $1 WHERE id = $2"
 	queryCtx, cancel := context.WithTimeout(ctx, QUERY_TIMEOUT)
 	defer cancel()
-	_, err = a.dbpool.Exec(queryCtx, query, now, sessionId)
+	_, err := a.dbpool.Exec(queryCtx, query, utils.GetNowTz(), sessionId)
 	if err != nil {
 		return err
 	}

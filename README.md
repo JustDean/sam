@@ -1,6 +1,5 @@
-## Simple Auth Manager (SAM) - is a microserves to handle users
+## Simple Auth Manager (SAM) - is a ms to handle users' sessions
 
 ### TODO
 1. Properly handle errors
 2. Write tests
-3. Write Github Action to build and push image

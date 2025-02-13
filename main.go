@@ -37,7 +37,7 @@ func main() {
 	}
 	server, err := grpc.SetServer(grpc.Config{
 		Host: utils.GetEnv("SERVER_HOST", "localhost"),
-		Port: utils.GetEnv("SERVER_PORT", "9898"),
+		Port: utils.GetEnv("SERVER_PORT", "9999"),
 	}, authManager)
 	if err != nil {
 		log.Fatalf("Error setting gRPC server %v", err)
@@ -56,5 +56,5 @@ func main() {
 		server.Run(ctx)
 	}()
 	wg.Wait()
-	log.Println("All stoped. Have a good day!")
+	log.Println("Service is shut down.")
 }

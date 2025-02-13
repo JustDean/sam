@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"log"
+	"time"
 )
 
 func (s *Server) Signup(ctx context.Context, data *CredentialsRequest) (*User, error) {
@@ -22,7 +23,7 @@ func (s *Server) Login(ctx context.Context, data *CredentialsRequest) (*Session,
 		return nil, err
 	}
 	log.Printf("Success Login - for user %s", session.Username)
-	return &Session{Id: session.Id, ValidThrough: session.ValidThrough.String(), Username: session.Username}, nil
+	return &Session{Id: session.Id, ValidThrough: session.ValidThrough.Format(time.RFC3339), Username: session.Username}, nil
 }
 
 func (s *Server) SignupAndLogin(ctx context.Context, data *CredentialsRequest) (*Session, error) {
